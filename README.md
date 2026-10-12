@@ -28,7 +28,7 @@ pnpm build
 ### System Overview
 
 - **Framework & Runtime**: Next.js App Router, React 19, TypeScript strict mode.
-- **Styling & Motion**: Tailwind CSS v4, GSAP for targeted animations (boot, panel entrance, scan sweep), pure CSS for ambient effects.
+- **Styling & Motion**: Tailwind CSS v4, GSAP for targeted animations (boot, panel entrance, scan sweep).
 - **Storage**: Browser-local IndexedDB via `idb` wrapper — zero client-side database server, with optional server note store for tool actions.
 
 ### Client Layer
@@ -160,9 +160,9 @@ pnpm build
 
 ## Notes
 
-- Dark workstation UI is diegetic (suit-ops console), documented in `globals.css`.
-- Red accent rationed to core speaking/error glow + destructive confirms.
-- GSAP only: boot, panel entrances, scan bar. Ambient motion is CSS.
+- UI direction: pure-black page, zero ambient effects — visual interest comes only from components (hairline borders, inverted primary button); documented in `globals.css`.
+- Cyan accent rationed to live states (links, focus, switch, scan); red to core speaking/error glow + destructive confirms; amber to warnings.
+- GSAP only: boot, panel entrances, scan bar. Component motion is CSS (ev-* keyframes + the mo-* prompt component stylesheet).
   `prefers-reduced-motion` respected + a manual override in Memory settings.
 - Diagnostics values are seeded (`mulberry32`) — stable across renders.
 - No secrets are stored client-side; storage failures surface with next steps.
