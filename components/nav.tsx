@@ -1,7 +1,10 @@
-/* PROJECT E.V. — shell navigation (frontend-owned).
-   Sidebar on desktop, bottom bar on mobile. Carries the two separate link
-   indicators: LOCAL (browser subsystem: IndexedDB ready) vs CLOUD (backend
-   /api/chat reachability probe). Never conflates the two. */
+/* PROJECT E.V. — site navigation (frontend-owned).
+   Top bar on desktop (brand left, primary links, LOCAL
+   and CLOUD status pills right), bottom bar on mobile.
+   Carries the two separate link indicators: LOCAL
+   (browser subsystem: IndexedDB ready) vs CLOUD
+   (backend /api/chat reachability probe). Never
+   conflates the two. */
 "use client";
 
 import Link from "next/link";
@@ -11,12 +14,10 @@ import {
   LayoutDashboard,
   MessagesSquare,
   Mic,
-  RefreshCw,
   Settings,
   Sparkles,
   Stethoscope,
 } from "lucide-react";
-import { useEffect, useState } from "react";
 import { useEv } from "@/lib/store";
 import SettingsModal from "./settings-modal";
 
@@ -29,31 +30,18 @@ const LINKS = [
   { href: "/studio", label: "Studio", icon: Sparkles },
 ];
 
-function useClock(): string {
-  const [now, setNow] = useState("--:--:--");
-  useEffect(() => {
-    const pad = (n: number) => n.toString().padStart(2, "0");
-    const tick = () => {
-      const d = new Date();
-      setNow(`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
-}
-
-function LinkStatus() {
+/** The two independent link indicators, as compact
+ *  pills. LOCAL never borrows CLOUD's state and vice
+ *  versa; the cloud pill doubles as the reachability
+ *  probe (one indicator, one gesture). */
+export function LinkStatus() {
   const {
     storageError,
     ready,
     backendReachable,
     backendConfigured,
     openRouterApiKey,
-    openRouterModel,
     recheckBackend,
-    openSettings,
   } = useEv();
   const localOk = ready && !storageError;
   const hasCustomKey = Boolean(openRouterApiKey?.trim());
@@ -78,7 +66,9 @@ function LinkStatus() {
     hasCustomKey
       ? backendReachable === false
         ? "bad"
-        : "ok"
+        : backendReachable === true
+          ? "ok"
+          : "mute"
       : backendReachable === null
         ? "mute"
         : backendReachable
@@ -86,108 +76,34 @@ function LinkStatus() {
             ? "ok"
             : "warn"
           : "bad";
+
   return (
-    <div className="ev-stack" style={{ gap: 8 }}>
-      <div className="ev-link-row">
-        <span>Subsystem · Local</span>
+    <div className="ev-topbar-status">
+      <span
+        className="ev-status-pill"
+        title="Local subsystem — browser IndexedDB"
+      >
         <span
           className={`ev-dot ev-dot-${localOk ? "ok" : ready ? "warn" : "mute"}`}
         />
-        <span className="ev-link-label">
-          {ready ? (storageError ? "Degraded" : "IndexedDB") : "Mounting…"}
-        </span>
-      </div>
-      <div className="ev-link-row">
-        <span>Subsystem · Cloud</span>
+        LOCAL ·{" "}
+        {ready ? (storageError ? "Degraded" : "IndexedDB") : "Mounting…"}
+      </span>
+      <button
+        type="button"
+        className="ev-status-pill"
+        onClick={recheckBackend}
+        title="Re-probe the backend /api/chat route"
+      >
         <span className={`ev-dot ev-dot-${cloudTone}`} />
-        <span className="ev-link-label">{cloudLabel}</span>
-      </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          fontSize: 11,
-          color: "var(--color-ev-muted)",
-          paddingTop: 2,
-        }}
-      >
-        <span>Model</span>
-        <span
-          style={{
-            fontFamily: "var(--font-geist-mono), monospace",
-            fontSize: 10.5,
-            color: "#35e0ff",
-            maxWidth: 130,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={openRouterModel || "anthropic/claude-3.5-sonnet"}
-        >
-          {(openRouterModel || "anthropic/claude-3.5-sonnet").split("/").pop()}
-        </span>
-      </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          fontSize: 11,
-          color: "var(--color-ev-muted)",
-          paddingTop: 2,
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <Mic style={{ width: 11, height: 11, color: "inherit" }} />
-          Wake Word
-        </span>
-        {/* Wake word parked — Coming Soon: muted label, no mic behavior. */}
-        <span
-          title="Wake word coming soon"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            background: "transparent",
-            border: "1px solid var(--color-ev-line)",
-            padding: "2px 6px",
-            borderRadius: 4,
-            color: "var(--color-ev-muted)",
-            fontSize: 10.5,
-          }}
-        >
-          <span className="ev-dot ev-dot-mute" />
-          Coming Soon
-        </span>
-      </div>
-      <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-        <button
-          type="button"
-          className="ev-icon-btn"
-          onClick={recheckBackend}
-          title="Re-probe the backend route"
-          style={{ flex: 1, justifyContent: "center" }}
-        >
-          <RefreshCw style={{ width: 12, height: 12 }} /> Probe
-        </button>
-        <button
-          type="button"
-          className="ev-icon-btn"
-          onClick={openSettings}
-          title="Configure API key and model"
-          style={{ flex: 1, justifyContent: "center" }}
-        >
-          <Settings style={{ width: 12, height: 12 }} /> Config
-        </button>
-      </div>
+        CLOUD · {cloudLabel}
+      </button>
     </div>
   );
 }
 
 export default function Nav() {
   const pathname = usePathname();
-  const clock = useClock();
   const { openSettings } = useEv();
 
   const current = (href: string) =>
@@ -195,16 +111,15 @@ export default function Nav() {
 
   return (
     <>
-      <aside className="ev-side" aria-label="Primary">
-        <div className="ev-brand">
+      <header className="ev-topbar">
+        <Link href="/" className="ev-brand" aria-label="E.V. — home">
           <span className="ev-brand-mark">EV</span>
-          <span>
+          <span className="ev-brand-text">
             <span className="ev-brand-name">E.V.</span>
-            <br />
             <span className="ev-brand-sub">Alfarez Console</span>
           </span>
-        </div>
-        <nav className="ev-nav">
+        </Link>
+        <nav className="ev-nav" aria-label="Primary">
           {LINKS.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
@@ -214,21 +129,20 @@ export default function Nav() {
               <Icon /> {label}
             </Link>
           ))}
+        </nav>
+        <div className="ev-topbar-actions">
+          <LinkStatus />
           <button
             type="button"
+            className="ev-icon-btn"
             onClick={openSettings}
             aria-label="Open model and API key settings"
+            title="Settings"
           >
-            <Settings /> Settings
+            <Settings style={{ width: 15, height: 15 }} />
           </button>
-        </nav>
-        <div className="ev-side-foot">
-          <LinkStatus />
-          <p className="ev-clock" aria-label="Local time">
-            {clock} LOCAL
-          </p>
         </div>
-      </aside>
+      </header>
       <nav className="ev-bottomnav" aria-label="Primary">
         {LINKS.map(({ href, label, icon: Icon }) => (
           <Link

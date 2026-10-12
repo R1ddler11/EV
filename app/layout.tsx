@@ -36,7 +36,7 @@ export default function RootLayout({
           {/* Opt-in ambient wake word — gated on the armed setting, never auto-starts. */}
           <WakeWordListener />
           <Boot />
-          <div className="ev-shell">
+          <div className="ev-site">
             <Nav />
             <main className="ev-main">
               <StorageBanner />
