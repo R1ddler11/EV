@@ -13,6 +13,7 @@ import {
   Mic,
   RefreshCw,
   Settings,
+  Sparkles,
   Stethoscope,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -25,6 +26,7 @@ const LINKS = [
   { href: "/voice", label: "Voice", icon: Mic },
   { href: "/diagnostics", label: "Diagnostics", icon: Stethoscope },
   { href: "/memory", label: "Memory", icon: Brain },
+  { href: "/studio", label: "Studio", icon: Sparkles },
 ];
 
 function useClock(): string {

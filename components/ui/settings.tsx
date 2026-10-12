@@ -44,15 +44,22 @@ export interface FeatureCardProps {
   icon: LucideIcon;
   title: string;
   description: string;
+  /** Optional real destination, rendered as a small ghost button. */
+  action?: { label: string; href: string };
   className?: string;
 }
 
-export function FeatureCard({ icon: Icon, title, description, className }: FeatureCardProps) {
+export function FeatureCard({ icon: Icon, title, description, action, className }: FeatureCardProps) {
   return (
     <div className={cn(cardVariants({ variant: "feature" }), className)}>
       <Icon className="size-4 text-ev-muted" aria-hidden="true" />
       <h3 className="text-[13.5px] font-semibold text-ev-ink">{title}</h3>
       <p className="text-[12.5px] leading-relaxed text-ev-muted">{description}</p>
+      {action && (
+        <a href={action.href} className="ev-btn ev-btn-sm ev-btn-ghost mt-2">
+          {action.label}
+        </a>
+      )}
     </div>
   );
 }

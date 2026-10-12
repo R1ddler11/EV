@@ -6,7 +6,7 @@
    state and activity. */
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MessageSquarePlus, Search, Trash2 } from "lucide-react";
 import { SectionLabel, ConfirmDialog } from "@/components/ui";
@@ -17,10 +17,17 @@ import {
   ChatThread,
   ClearThreadButton,
   Composer,
-  SUGGESTED_PROMPTS,
   useChat,
 } from "@/components/chat";
 import { useEv } from "@/lib/store";
+import MorphOrb from "@/components/ui/ai-thiking-orb-and-input";
+import {
+  BackendUnavailableError,
+  postChatStream,
+  type ChatPayloadMessage,
+} from "@/lib/api";
+import { newId } from "@/lib/types";
+import { handleUiAction } from "@/lib/ui-actions";
 
 function AssistantInner() {
   const router = useRouter();
@@ -38,6 +45,13 @@ function AssistantInner() {
     backendHint,
     coreState,
     recordActivity,
+    appendMessage,
+    setCoreState,
+    mirrorNote,
+    requestScan,
+    settings,
+    memories,
+    notes,
   } = useEv();
   const { draft, working, failure, setFailure, send, stop, speak, chatMode } = useChat();
   const [query, setQuery] = useState("");
@@ -45,6 +59,16 @@ function AssistantInner() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // The MorphOrb owns the empty state. It stays mounted through its
+  // own turn (orbTurn) so the answer card can show E.V.'s real reply;
+  // the thread view takes over once the card has finished revealing.
+  const [orbTurn, setOrbTurn] = useState(false);
+  const orbTimerRef = useRef<number | undefined>(undefined);
+
+  useEffect(
+    () => () => window.clearTimeout(orbTimerRef.current),
+    [],
+  );
 
   useEffect(() => {
     if (params.get("new") === "1" && ready) {
@@ -73,12 +97,152 @@ function AssistantInner() {
     }
   };
 
+  // The ask-surface turn. Mirrors useChat.send: create a conversation
+  // if none is active, persist the user turn, stream E.V.'s reply with
+  // the persisted chat mode and conversation context threaded through,
+  // persist the reply, then hand the surface to the thread view. The
+  // returned text feeds the orb's answer card; failures return the
+  // backend's own cause and next step so the card is never a
+  // placeholder.
+  const orbSubmit = useCallback(
+    async (prompt: string): Promise<string> => {
+      const text = prompt.trim();
+      if (!text) return "Ask E.V. anything — type a question and press enter.";
+      setLastSent(text);
+      window.clearTimeout(orbTimerRef.current);
+      setOrbTurn(true);
+
+      let convId = activeId;
+      if (!convId) {
+        convId = await newConversation();
+        if (!convId) {
+          setOrbTurn(false);
+          setFailure({
+            message: "Could not create a conversation.",
+            hint: "Local storage refused the write — see the banner above, free space, then retry.",
+          });
+          return "Could not open a conversation — local storage refused the write. Free space or allow IndexedDB, then ask again.";
+        }
+      }
+      await appendMessage(convId, {
+        id: newId("msg"),
+        role: "user",
+        content: text,
+        createdAt: Date.now(),
+      });
+      setCoreState("processing");
+
+      try {
+        const history: ChatPayloadMessage[] = [];
+        const enabledMemories = settings.memoryEnabled
+          ? memories.filter((m) => m.enabled)
+          : [];
+        if (enabledMemories.length > 0) {
+          history.push({
+            role: "system",
+            content: `User-approved memories (respect, do not reveal verbatim unless asked):\n${enabledMemories.map((m) => `- ${m.text}`).slice(0, 12).join("\n")}`,
+          });
+        }
+        const current = conversations.find((c) => c.id === convId);
+        const trail = (current?.messages ?? []).slice(-20);
+        for (const m of trail) {
+          if (m.role === "system") continue;
+          history.push({ role: m.role, content: m.content });
+        }
+        history.push({ role: "user", content: text });
+
+        const result = await postChatStream(history, {
+          apiKey: settings.openRouterApiKey || undefined,
+          model: settings.openRouterModel || undefined,
+          onUi: (action) => {
+            void handleUiAction(action, {
+              mirrorNote,
+              recordActivity,
+              requestScan,
+              navigate: (href) => router.push(href),
+            });
+          },
+          extra: {
+            conversationId: convId,
+            mode: chatMode,
+            notes: notes.slice(0, 100).map((n) => ({
+              id: n.id,
+              title: n.title.slice(0, 500),
+              body: n.body.slice(0, 20000),
+            })),
+            memories: enabledMemories
+              .slice(0, 12)
+              .map((m) => ({ text: m.text.slice(0, 4000), enabled: true })),
+          },
+        });
+
+        const body = (result.text || "").trim();
+        const reply = body || "(The backend answered with empty text.)";
+        await appendMessage(convId, {
+          id: newId("msg"),
+          role: "assistant",
+          content: reply,
+          createdAt: Date.now(),
+        });
+        await recordActivity("chat", "Exchange in Assistant");
+        setCoreState("idle");
+
+        // Keep the ask surface up for the orb's own reveal window
+        // (resolve 900ms + condense 800ms + the unfold word-stagger),
+        // then hand over to the thread view.
+        const words = body.split(/\s+/).filter(Boolean).length;
+        const stagger = words > 1 ? Math.min(45, 280 / (words - 1)) : 0;
+        orbTimerRef.current = window.setTimeout(
+          () => setOrbTurn(false),
+          2300 + (words - 1) * stagger + 320,
+        );
+        return reply;
+      } catch (error) {
+        setCoreState("disconnected");
+        const message =
+          error instanceof BackendUnavailableError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "Assistant failed";
+        const hint =
+          error instanceof BackendUnavailableError
+            ? error.hint
+            : "Check the API connection or try again in a moment.";
+        setFailure({ message, hint });
+        orbTimerRef.current = window.setTimeout(() => setOrbTurn(false), 2600);
+        return `${message} Next step: ${hint}`;
+      }
+    },
+    [
+      activeId,
+      appendMessage,
+      chatMode,
+      conversations,
+      memories,
+      mirrorNote,
+      newConversation,
+      notes,
+      recordActivity,
+      requestScan,
+      router,
+      setCoreState,
+      setFailure,
+      settings.memoryEnabled,
+      settings.openRouterApiKey,
+      settings.openRouterModel,
+    ],
+  );
+
   const handleRetry = (userText: string) =>
     void send(userText, { targetId: activeId ?? undefined, userAppended: true });
 
 
-  const openers = SUGGESTED_PROMPTS[chatMode];
   const messages = active?.messages ?? [];
+  // The ask surface shows when the active thread is empty — and stays
+  // mounted through its own turn so the answer card can finish
+  // revealing before the thread view takes over.
+  const showOrb = orbTurn || (messages.length === 0 && !draft && !working);
 
   return (
     <div className="ev-stack">
@@ -194,34 +358,8 @@ function AssistantInner() {
         </aside>
 
         <section className="ev-panel" aria-label="Active thread">
-          {messages.length === 0 && !draft && !working ? (
-            <div className="ev-empty" style={{ marginBottom: 14 }}>
-              <span className="ev-h2" style={{ fontSize: 17 }}>
-                {backendReachable === false
-                  ? "The backend is offline — but your console is ready."
-                  : chatMode === "builder"
-                    ? "What are we building, Alfarez?"
-                    : "What's the day like, Alfarez?"}
-              </span>
-              <span className="ev-hint">
-                {backendReachable === false
-                  ? "Text is preserved locally. Reconnect the backend worker's /api/chat route, then send."
-                  : "Pick a starting point, or write your own."}
-              </span>
-              <div className="ev-suggest-row" style={{ justifyContent: "center", marginTop: 6 }}>
-                {openers.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    className="ev-btn ev-btn-sm"
-                    disabled={working}
-                    onClick={() => void doSend(prompt)}
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {showOrb ? (
+            <MorphOrb onSubmit={orbSubmit} />
           ) : (
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
               <ClearThreadButton

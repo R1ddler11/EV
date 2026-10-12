@@ -23,6 +23,7 @@ import { useEv } from "@/lib/store";
 import { handleUiAction } from "@/lib/ui-actions";
 import { ConfirmDialog } from "./ui";
 import { PromptInputBox } from "./ui/ai-prompt-box";
+import { VoiceInput } from "./ui/voice-input";
 
 /** Openers a person would actually type to a friend. */
 export const DAILY_OPENERS = [
@@ -902,16 +903,26 @@ export function Composer({
 
   return (
     <div className="w-full">
-      <PromptInputBox
-        isLoading={busy}
-        placeholder={placeholder}
-        onSend={(text) => {
-          const trimmed = text.trim();
-          if (trimmed) onSend(trimmed);
-        }}
-        onStop={onStop}
-        onVoiceClick={() => router.push("/voice")}
-      />
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <PromptInputBox
+            isLoading={busy}
+            placeholder={placeholder}
+            onSend={(text) => {
+              const trimmed = text.trim();
+              if (trimmed) onSend(trimmed);
+            }}
+            onStop={onStop}
+            onVoiceClick={() => router.push("/voice?auto=1")}
+          />
+        </div>
+        {/* Mic toggle: the click really starts the realtime session
+            via the voice page's existing ?auto=1 auto-start flow. */}
+        <VoiceInput
+          onStart={() => router.push("/voice?auto=1")}
+          onStop={() => undefined}
+        />
+      </div>
     </div>
   );
 }

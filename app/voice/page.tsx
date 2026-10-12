@@ -28,7 +28,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import VoiceDictator from "@/components/ui/voice-dictator";
+import { VoicePoweredOrb } from "@/components/ui/voice-powered-orb";
 import LevelMeter from "@/components/voice/level-meter";
 import SavedRecordings from "@/components/voice/saved-recordings";
 import CloudPill from "@/components/cloud-pill";
@@ -179,7 +179,6 @@ function VoiceInner() {
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [interim, setInterim] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
-  const [liveAmplitude, setLiveAmplitude] = useState(0.08);
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [muted, setMuted] = useState(false);
@@ -315,7 +314,6 @@ function VoiceInner() {
     setRecUnsupported(false);
     setRecElapsed(0);
     setSavingRecording(false);
-    setLiveAmplitude(0.08);
     setIsProcessing(false);
     setMuted(false);
     setRateLimits([]);
@@ -354,15 +352,6 @@ function VoiceInner() {
     const data = new Uint8Array(analyser.fftSize);
     const render = () => {
       analyser.getByteTimeDomainData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) {
-        const diff = ((data[i] ?? 128) - 128) / 128;
-        sum += diff * diff;
-      }
-      const rms = Math.sqrt(sum / data.length);
-      const scaled = Math.min(1.2, 0.08 + rms * 3.5);
-      setLiveAmplitude(scaled);
-
       ctx2d.clearRect(0, 0, canvas.width, canvas.height);
       ctx2d.strokeStyle = "#35e0ff";
       ctx2d.lineWidth = 1.5;
@@ -520,23 +509,6 @@ function VoiceInner() {
         sourceNode.connect(analyser);
         analyser.connect(audioCtx.destination);
 
-        const freqData = new Uint8Array(analyser.frequencyBinCount);
-
-        const trackPlayback = () => {
-          if (!playbackRef.current) return;
-          analyser.getByteFrequencyData(freqData);
-          let sum = 0;
-          for (let i = 0; i < freqData.length; i++) {
-            sum += freqData[i] ?? 0;
-          }
-          const avg = sum / freqData.length;
-          // Scale to orb amplitude (idle: ~0.08, active voice: up to 1.2)
-          const scaled = Math.min(1.2, 0.08 + (avg / 128) * 1.0);
-          setLiveAmplitude(scaled);
-
-          playbackRef.current.raf = requestAnimationFrame(trackPlayback);
-        };
-
         playbackRef.current = {
           ctx: audioCtx,
           analyser,
@@ -545,7 +517,6 @@ function VoiceInner() {
         };
 
         await audioCtx.resume();
-        trackPlayback();
 
         await new Promise<void>((resolve) => {
           audioEl.onended = () => {
@@ -608,7 +579,6 @@ function VoiceInner() {
       } finally {
         stopPlayback();
         if (aliveRef.current) {
-          setLiveAmplitude(0.08);
           setCoreState("listening");
         }
       }
@@ -1362,19 +1332,30 @@ function VoiceInner() {
             justifyContent: "center",
           }}
         >
-          <VoiceDictator
-            className="absolute inset-0 w-full h-full flex flex-col items-center justify-center overflow-hidden bg-black text-white"
-            isListening={phase === "live" && !muted}
-            onToggle={phase === "live" ? () => void end() : () => void begin()}
-            amplitude={phase === "live" ? liveAmplitude : 0.08}
-            showButton={true}
-            buttonAriaLabel={
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label={
               phase === "live"
                 ? "End voice session"
                 : "Enable microphone and start session"
             }
-            showTranscript={false}
-          />
+            onClick={phase === "live" ? () => void end() : () => void begin()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                if (phase === "live") void end();
+                else void begin();
+              }
+            }}
+            className="absolute inset-0 cursor-pointer"
+          >
+            <VoicePoweredOrb
+              className="w-full h-full"
+              hue={187}
+              enableVoiceControl={phase === "live"}
+            />
+          </div>
 
           <div
             style={{
