@@ -89,7 +89,6 @@ interface EvState {
   speakReplies: boolean;
   /** speechSynthesis voice URI chosen for the text chat; "" = platform default. */
   speakVoice: string;
-  settingsOpen: boolean;
 }
 interface EvActions {
   newConversation: () => Promise<string>;
@@ -139,8 +138,6 @@ interface EvActions {
   ) => Promise<void>;
   clearAllActivity: () => Promise<void>;
   dismissStorageError: () => void;
-  openSettings: () => void;
-  closeSettings: () => void;
 }
 
 const EvContext = createContext<(EvState & EvActions) | null>(null);
@@ -167,7 +164,6 @@ export function EvProvider({ children }: { children: ReactNode }) {
   const [backendHint, setBackendHint] = useState<string | null>(null);
   const [scanRequest, setScanRequest] = useState(0);
   const [streaming, setStreaming] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const booted = useRef(false);
   const conversationsRef = useRef<Conversation[]>([]);
 
@@ -688,8 +684,6 @@ export function EvProvider({ children }: { children: ReactNode }) {
   }, [noteFailure]);
 
   const dismissStorageError = useCallback(() => setStorageError(null), []);
-  const openSettings = useCallback(() => setSettingsOpen(true), []);
-  const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const active = useMemo(
     () => conversations.find((conv) => conv.id === activeId) ?? null,
     [conversations, activeId],
@@ -713,7 +707,6 @@ export function EvProvider({ children }: { children: ReactNode }) {
       backendHint,
       scanRequest,
       streaming,
-      settingsOpen,
       newConversation,
       selectConversation,
       renameConversation,
@@ -769,8 +762,6 @@ export function EvProvider({ children }: { children: ReactNode }) {
       recordActivity,
       clearAllActivity,
       dismissStorageError,
-      openSettings,
-      closeSettings,
     }),
     [
       ready,
@@ -826,9 +817,6 @@ export function EvProvider({ children }: { children: ReactNode }) {
       setSpeakReplies,
       setSpeakVoice,
       dismissStorageError,
-      settingsOpen,
-      openSettings,
-      closeSettings,
     ],
   );
 

@@ -19,7 +19,6 @@ import {
   Stethoscope,
 } from "lucide-react";
 import { useEv } from "@/lib/store";
-import SettingsModal from "./settings-modal";
 
 const LINKS = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -104,8 +103,6 @@ export function LinkStatus() {
 
 export default function Nav() {
   const pathname = usePathname();
-  const { openSettings } = useEv();
-
   const current = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
@@ -132,15 +129,15 @@ export default function Nav() {
         </nav>
         <div className="ev-topbar-actions">
           <LinkStatus />
-          <button
-            type="button"
+          <Link
+            href="/settings"
+            aria-current={pathname === "/settings" ? "page" : undefined}
             className="ev-icon-btn"
-            onClick={openSettings}
-            aria-label="Open model and API key settings"
+            aria-label="Settings"
             title="Settings"
           >
             <Settings style={{ width: 15, height: 15 }} />
-          </button>
+          </Link>
         </div>
       </header>
       <nav className="ev-bottomnav" aria-label="Primary">
@@ -153,15 +150,14 @@ export default function Nav() {
             <Icon /> {label}
           </Link>
         ))}
-        <button
-          type="button"
-          onClick={openSettings}
-          aria-label="Open model and API key settings"
+        <Link
+          href="/settings"
+          aria-current={pathname === "/settings" ? "page" : undefined}
+          aria-label="Settings"
         >
           <Settings /> Settings
-        </button>
+        </Link>
       </nav>
-      <SettingsModal />
     </>
-  );
+   );
 }

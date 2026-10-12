@@ -41,7 +41,7 @@ import {
   savedFishVoices,
   speakOptionsForVoice,
   truncateId,
-} from "@/components/settings-modal";
+} from "@/lib/voice-options";
 import {
   BackendUnavailableError,
   createVoiceSession,

@@ -289,7 +289,7 @@ export interface SpeakAloud extends SpeakControls {
   stop: () => void;
 }
 
-function useSpeakAloud(): SpeakAloud {
+export function useSpeakAloud(): SpeakAloud {
   const { speakReplies, speakVoice, setSpeakReplies, setSpeakVoice } = useEv();
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(() =>
     sortVoices(synth()?.getVoices() ?? []),
@@ -785,7 +785,7 @@ const MODE_OPTIONS: { value: ChatMode; label: string; hint: string }[] = [
   },
 ];
 
-function ModeToggle({
+export function ModeToggle({
   mode,
   onChange,
 }: {

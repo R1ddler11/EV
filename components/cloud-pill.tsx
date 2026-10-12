@@ -2,9 +2,10 @@
    Three states, never two: Online (route mounted + key configured),
    Setup needed (mounted, no key — chat will 503 with setup hint),
    Offline (route missing or unreachable).
-   Clickable to open Model & Key Settings dialog. */
+   Clickable: opens /settings (model & key configuration). */
 "use client";
 
+import Link from "next/link";
 import { useEv } from "@/lib/store";
 import { StatusPill } from "./ui";
 
@@ -14,7 +15,6 @@ export default function CloudPill() {
     backendConfigured,
     backendHint,
     openRouterApiKey,
-    openSettings,
   } = useEv();
 
   const hasCustomKey = Boolean(openRouterApiKey?.trim());
@@ -54,22 +54,13 @@ export default function CloudPill() {
   }
 
   return (
-    <button
-      type="button"
-      onClick={openSettings}
-      title="Click to configure API Key & Model"
+    <Link
+      href="/settings"
+      title="Configure API key & model — Settings"
       aria-label="Open model and API key settings"
-      style={{
-        background: "transparent",
-        border: "none",
-        padding: 0,
-        margin: 0,
-        cursor: "pointer",
-        display: "inline-flex",
-        alignItems: "center",
-      }}
+      style={{ display: "inline-flex", alignItems: "center" }}
     >
       {pillContent}
-    </button>
+    </Link>
   );
 }
