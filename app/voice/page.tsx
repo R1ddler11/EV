@@ -228,7 +228,32 @@ function VoiceInner() {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  // Play one TTS reply blob through an <audio> element. Barge-in safe:
+  // stopPlayback pauses the tracked element alongside speechSynthesis.
+  const replyAudioRef = useRef<HTMLAudioElement | null>(null);
+  const playBlob = useCallback((blob: Blob): Promise<void> => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    replyAudioRef.current = audio;
+    const done = () => {
+      URL.revokeObjectURL(url);
+      if (replyAudioRef.current === audio) replyAudioRef.current = null;
+      resolve();
+    };
+    audio.onended = done;
+    audio.onerror = done;
+    audio.play().catch(done);
+    return promise;
+  }, []);
+
   const stopPlayback = useCallback(() => {
+    if (replyAudioRef.current) {
+      replyAudioRef.current.pause();
+      replyAudioRef.current.src = "";
+      replyAudioRef.current = null;
+    }
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
@@ -298,7 +323,7 @@ function VoiceInner() {
 
   useEffect(() => teardown, [teardown]);
 
-  // Local fallback: Web Speech + chat + TTS
+
   const handleLocalTurn = useCallback(async (text: string) => {
     if (isTurnInFlightRef.current) return;
     isTurnInFlightRef.current = true;
@@ -347,10 +372,19 @@ function VoiceInner() {
         setLines((prev) => [...prev, { speaker: "assistant", text: reply }]);
         linesRef.current = [...linesRef.current, { speaker: "assistant", text: reply }];
 
-        // Speak aloud
+        // Speak aloud: fetch the TTS blob, play it so E.V. is heard, and
+        // tee it into the session recorder (E.V.'s voice only, never mic).
         const activeVoice = resolveActiveVoice(settingsRef.current);
         const speakOpts = speakOptionsForVoice(activeVoice, settingsRef.current);
-        await speakText(reply, { ...speakOpts, allowFallback: true });
+        const { blob } = await speakText(reply, { ...speakOpts, allowFallback: true });
+        recorderRef.current?.appendReply(blob);
+        setRecState("capturing");
+        setIsSpeaking(true);
+        try {
+          await playBlob(blob);
+        } finally {
+          if (aliveRef.current) setIsSpeaking(false);
+        }
 
         // Persist to conversation
         await appendMessage(convId, {
@@ -377,7 +411,7 @@ function VoiceInner() {
       setHasPendingTurn(false);
       interimAssistant.current = "";
     }
-  }, [activeIdRef, newConversation, memoriesRef, notesRef, settings, appendMessage]);
+  }, [activeIdRef, newConversation, memoriesRef, notesRef, settings, appendMessage, playBlob]);
 
   const startLocal = useCallback(async () => {
     setPhase("live");

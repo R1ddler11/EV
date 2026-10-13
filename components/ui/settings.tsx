@@ -5,6 +5,7 @@
 // patterns remain — FeatureCard (capability) and GuideCard
 // (documentation link, polymorphic via Slot).
 
+import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
 import { ArrowUpRight, type LucideIcon } from "lucide-react";
@@ -58,7 +59,7 @@ export interface GuideCardProps
   children?: React.ReactNode;
 }
 
-export function GuideCard({ icon: Icon, title, description, asChild, className, ...rest }: GuideCardProps) {
+export function GuideCard({ icon: Icon, title, description, asChild, className, children, ...rest }: GuideCardProps) {
   const inner = (
     <>
       <Icon className="size-4 mt-0.5 flex-none text-ev-muted" aria-hidden="true" />
@@ -78,9 +79,15 @@ export function GuideCard({ icon: Icon, title, description, asChild, className, 
   );
 
   if (asChild) {
+    // Slot merges className onto its single child element. A bare <Link />
+    // has no text content, so render the card content inside it — the child
+    // must be a real element (never a Fragment) for the merge to land on.
+    const child = (children ?? null) as React.ReactElement | null;
     return (
       <Slot className={cn(cardVariants({ variant: "guide" }), "group flex items-start gap-3", className)} {...rest}>
-        {inner}
+        {child && React.isValidElement(child)
+          ? React.cloneElement(child, undefined, inner)
+          : inner}
       </Slot>
     );
   }
