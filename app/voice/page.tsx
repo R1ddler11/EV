@@ -197,7 +197,8 @@ function VoiceInner() {
   const interimAssistant = useRef("");
   /** Mirrors linkMode so the auto-trigger effect can read it without re-render. */
   const linkModeRef = useRef<LinkMode>("realtime");
-
+  const silenceTimerRef = useRef<number | undefined>(undefined);
+  const pendingUserTurnRef = useRef<string>("");
   // Keep references to state values needed inside callbacks
   const activeIdRef = useRef(activeId);
   const settingsRef = useRef(settings);
@@ -263,6 +264,9 @@ function VoiceInner() {
   }, []);
 
   const teardown = useCallback(() => {
+    clearTimeout(silenceTimerRef.current);
+    silenceTimerRef.current = undefined;
+    pendingUserTurnRef.current = "";
     if (recorderRef.current) {
       recorderRef.current.dispose();
       recorderRef.current = null;
@@ -433,21 +437,34 @@ function VoiceInner() {
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
+    // Dictation debounce: the recognizer emits finals per pause, not per
+    // thought. Accumulate final fragments and only send the turn after
+    // ~1.2s of silence, so mid-sentence pauses don't fire early.
+    // Interim text keeps flowing to the UI while we wait.
     recognition.onresult = (event: SpeechResultEventLike) => {
       if (mutedRef.current) return;
-      let finalText = "";
+      let freshFinal = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results.item(i);
         if (!res) continue;
         if (res.isFinal) {
-          finalText += res[0].transcript;
+          freshFinal += res[0].transcript;
         } else {
           setInterim(res[0].transcript);
         }
       }
-      if (finalText.trim()) {
-        setInterim("");
-        handleLocalTurn(finalText.trim());
+      if (freshFinal.trim()) {
+        pendingUserTurnRef.current +=
+          (pendingUserTurnRef.current ? " " : "") + freshFinal.trim();
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = window.setTimeout(() => {
+          const text = pendingUserTurnRef.current.trim();
+          pendingUserTurnRef.current = "";
+          silenceTimerRef.current = undefined;
+          if (!text || mutedRef.current) return;
+          setInterim("");
+          handleLocalTurn(text);
+        }, 1200);
       }
     };
 
