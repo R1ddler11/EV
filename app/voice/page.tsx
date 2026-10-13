@@ -691,7 +691,7 @@ function VoiceInner() {
               aria-pressed={muted}
               aria-label={muted ? "Unmute" : "Mute"}
             >
-              {muted ? <MicOff size={18} /> : <Mic size={18} />}
+              {muted ? <MicOff size={20} /> : <Mic size={20} />}
             </button>
             <button
               type="button"

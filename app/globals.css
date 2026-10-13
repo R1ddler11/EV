@@ -1868,6 +1868,15 @@ button.ev-status-pill:hover {
   font-weight: 500;
 }
 
+/* Mute toggle: proper circular 44px tap target. */
+button.ev-mic-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 999px;
+  justify-content: center;
+}
+
 .ev-mic-btn.ev-muted {
   color: var(--color-ev-muted);
 }
@@ -3132,7 +3141,23 @@ animation-name:mo-fade-out}}
 .orb-hero .mo-reset:focus-visible,
 .orb-hero .mo-debug button:focus-visible {
   outline-color: var(--color-ev-cyan);
-}/* ---------- settings page ---------- */
+}
+
+/* Answer card: unwrap the verbatim 2-line clamp so full replies read. */
+.orb-hero .mo-a-body {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  max-height: none;
+}
+
+/* Answered-phase card: wide enough to read, never wider than viewport. */
+.orb-hero .mo-root[data-phase="answered"] .mo-actor {
+  width: min(560px, 92vw);
+  min-width: 280px;
+}
+
+/* ---------- settings page ---------- */
 
 /* Section navigation rail (desktop) / tabs (mobile) */
 .ev-settings-nav {
