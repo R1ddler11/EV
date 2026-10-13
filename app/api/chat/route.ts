@@ -422,6 +422,14 @@ export async function POST(request: Request) {
 
             if (signal.aborted) break;
 
+            // Force the follow-up: some OpenRouter models end the turn after
+            // tool results instead of answering, leaving the user with action
+            // but no reply. Nudging for the summary keeps action + words together.
+            conversationMessages.push({
+              role: "user",
+              content:
+                "Summarize what you just did in one or two short sentences, in your own voice.",
+            });
             try {
               active = await client.chat.completions.create(
                 {

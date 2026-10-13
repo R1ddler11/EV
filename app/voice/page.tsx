@@ -114,6 +114,10 @@ interface TranscriptLine {
   text: string;
   /** Cut off by barge-in: shown as a fragment, never as a full answer. */
   interrupted?: boolean;
+  /** Local-mode TTS blob for this assistant reply, kept so the single
+   * reply can be replayed or saved on its own. Never persisted wholesale —
+   * the save button below writes one recording per tap. */
+  audio?: Blob;
 }
 
 /** Auto-title a saved segment from its first user line. */
@@ -392,7 +396,16 @@ function VoiceInner() {
         const speakOpts = speakOptionsForVoice(activeVoice, settingsRef.current);
         const { blob } = await speakText(reply, { ...speakOpts, allowFallback: true });
         recorderRef.current?.appendReply(blob);
-        setRecState("capturing");
+        // Keep the blob on the line so this exact reply can be replayed or
+        // saved individually from its own button.
+        setLines((prev) => {
+          const next = [...prev];
+          const lastIdx = next.findLastIndex((l) => l.speaker === "assistant");
+          if (lastIdx >= 0) next[lastIdx] = { ...next[lastIdx]!, audio: blob };
+          return next;
+        });
+        const lrIdx = linesRef.current.findLastIndex((l) => l.speaker === "assistant");
+        if (lrIdx >= 0) linesRef.current[lrIdx] = { ...linesRef.current[lrIdx]!, audio: blob };
         setIsSpeaking(true);
         let heard = true;
         try {
@@ -727,9 +740,46 @@ function VoiceInner() {
     } finally {
       setSavingRecording(false);
     }
-  }, [recElapsed, linkMode, recordActivity]);
+  }, [linkMode, recordActivity]);
 
-  // Start session on first user gesture
+  // Save one assistant reply's own audio (its per-line button). Falls back
+  // to the session recorder only when the line kept no blob.
+  const [savingLine, setSavingLine] = useState<number | null>(null);
+  const handleSaveLine = useCallback(async (index: number) => {
+    const line = linesRef.current[index];
+    if (!line || line.speaker !== "assistant") return;
+    setSavingLine(index);
+    try {
+      const blob = line.audio ?? (await recorderRef.current?.snapshot())?.blob;
+      if (!blob || blob.size === 0) {
+        setNotice("Nothing saved for this reply yet — wait for E.V. to finish speaking.");
+        return;
+      }
+      const title = line.text.length > 44 ? `${line.text.slice(0, 44)}…` : line.text || "Voice reply";
+      await saveRecording({
+        id: newId("rec"),
+        title,
+        source: "local-tts",
+        createdAt: Date.now(),
+        durationSec: 0,
+        mimeType: blob.type,
+        sizeBytes: blob.size,
+        blob,
+      });
+      setSaved(true);
+      setSavedTick((t) => t + 1);
+      setTimeout(() => setSaved(false), 2000);
+      recordActivity("voice", `Saved reply: ${title}`);
+    } catch (err) {
+      if (err instanceof PersistenceError) {
+        setNotice(err.message);
+      } else {
+        setNotice("Failed to save this reply.");
+      }
+    } finally {
+      setSavingLine(null);
+    }
+  }, [recordActivity]);
   const handleStart = useCallback(() => {
     if (phase === "ready") {
       const hasOpenRouterKey = (settingsRef.current.openRouterApiKey ?? "").trim().length > 0;
@@ -886,21 +936,35 @@ function VoiceInner() {
             ) : (
               <>
                 {lines.map((line, i) => (
-                  <p key={i} className="ev-transcript-line">
-                    <strong style={{ color: line.speaker === "assistant" ? "var(--color-ev-cyan)" : "#8d99a6" }}>
-                      {line.speaker === "assistant" ? "E.V." : "Alfarez"}:
-                    </strong>{" "}
-                    {line.interrupted ? (
-                      <span style={{ color: "var(--color-ev-muted)" }}>
-                        {line.text}{" "}
-                        <em style={{ fontSize: 12 }}>
-                          (cut off — you talked over E.V.)
-                        </em>
-                      </span>
-                    ) : (
-                      line.text
+                  <div key={i} className="ev-transcript-line">
+                    <p style={{ margin: 0 }}>
+                      <strong style={{ color: line.speaker === "assistant" ? "var(--color-ev-cyan)" : "#8d99a6" }}>
+                        {line.speaker === "assistant" ? "E.V." : "Alfarez"}:
+                      </strong>{" "}
+                      {line.interrupted ? (
+                        <span style={{ color: "var(--color-ev-muted)" }}>
+                          {line.text}{" "}
+                          <em style={{ fontSize: 12 }}>
+                            (cut off — you talked over E.V.)
+                          </em>
+                        </span>
+                      ) : (
+                        line.text
+                      )}
+                    </p>
+                    {line.speaker === "assistant" && !line.interrupted && (
+                      <button
+                        type="button"
+                        className="ev-icon-btn ev-reply-save"
+                        onClick={() => void handleSaveLine(i)}
+                        disabled={savingLine === i}
+                        aria-label={`Save E.V.'s reply ${i + 1} as a recording`}
+                        title="Save this reply's voice"
+                      >
+                        <Save size={13} /> {savingLine === i ? "Saving…" : "Save voice"}
+                      </button>
                     )}
-                  </p>
+                  </div>
                 ))}
                 {interim && (
                   <p className="ev-transcript-interim">
