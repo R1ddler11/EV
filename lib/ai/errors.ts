@@ -82,6 +82,17 @@ export function mapOpenAIError(error: unknown): SafeApiError {
     );
   }
   if (error instanceof OpenAI.APIError) {
+    if (
+      error.status === 502 ||
+      /bad gateway|upstream|overloaded|try again later/i.test(error.message ?? "")
+    ) {
+      return base(
+        502,
+        "model_overloaded",
+        "OpenRouter's model endpoint is down or overloaded right now.",
+        "This is upstream, not your key: check https://status.openrouter.ai, wait ~1-2 min and retry. If it repeats on this model, switch models in Settings → Advanced (e.g. anthropic/claude-3.5-sonnet or openai/gpt-4o-mini). Your text is preserved — nothing was sent.",
+      );
+    }
     return base(
       error.status >= 500 || error.status === 0 ? 502 : error.status,
       "provider_error",

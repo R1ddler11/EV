@@ -206,12 +206,9 @@ function VoiceInner() {
   const convIdRef = useRef<string | null>(null);
   const isTurnInFlightRef = useRef(false);
   const aliveRef = useRef(true);
+  const mutedRef = useRef(false);
+  const phaseRef = useRef<VoicePhase>("ready");
   const reduced = !motionAllowed(settings.reducedMotionOverride);
-  // ACTIVE voice: which group is selected plus the exact id sent to TTS.
-  const activeVoice = resolveActiveVoice(settings);
-  const fishVoices = savedFishVoices(settings);
-  const openRouterKey = (settings.openRouterApiKey ?? "").trim();
-
   useEffect(() => {
     activeIdRef.current = activeId;
     settingsRef.current = settings;
@@ -225,7 +222,12 @@ function VoiceInner() {
       aliveRef.current = false;
     };
   }, []);
-
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
   const stopPlayback = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -362,8 +364,10 @@ function VoiceInner() {
       if (err instanceof BackendUnavailableError) {
         if (err.code === "setup_required") {
           setNotice("No OpenRouter key — add one in Settings → Advanced so E.V. can answer.");
+        } else if (err.code === "model_overloaded") {
+          setNotice(`${err.message} ${err.hint}`);
         } else {
-          setNotice(err.message);
+          setNotice(`${err.message} ${err.hint}`);
         }
       } else {
         setNotice("Local turn failed. Check connection.");
@@ -396,6 +400,7 @@ function VoiceInner() {
     recognition.lang = "en-US";
 
     recognition.onresult = (event: SpeechResultEventLike) => {
+      if (mutedRef.current) return;
       let finalText = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results.item(i);
@@ -419,7 +424,7 @@ function VoiceInner() {
     };
 
     recognition.onend = () => {
-      if (aliveRef.current && phase === "live") {
+      if (aliveRef.current && phaseRef.current === "live") {
         // Auto-restart unless we're ending
         recognition.start();
       }
@@ -572,6 +577,22 @@ function VoiceInner() {
       realtimeRef.current.setMicEnabled(!next);
     } else if (streamRef.current) {
       streamRef.current.getAudioTracks().forEach((t) => (t.enabled = !next));
+    }
+    // Local mode: gate the Web Speech recognizer
+    if (linkMode === "local") {
+      if (next) {
+        // Muting: stop recognizer so in-flight utterance doesn't complete
+        recogRef.current?.stop();
+      } else if (phaseRef.current === "live") {
+        // Unmuting: restart recognizer if still live
+        try {
+          recogRef.current?.start();
+        } catch (e: unknown) {
+          const err = e as DOMException;
+          // Ignore InvalidStateError (already started)
+          if (err.name !== "InvalidStateError") throw e;
+        }
+      }
     }
   }, [muted, linkMode]);
 
