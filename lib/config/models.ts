@@ -6,9 +6,9 @@
 
 export const DOCS_CHECKED_DATE = "2026-10-12";
 
-/** Default text model: balances intelligence and cost for OpenRouter. */
-export const DEFAULT_TEXT_MODEL = "anthropic/claude-3.5-sonnet";
-
+/** Default text model: balances intelligence and cost for OpenRouter.
+ * openai/gpt-4o-mini works reliably on free OpenRouter keys. */
+export const DEFAULT_TEXT_MODEL = "openai/gpt-4o-mini";
 /** Supported / popular models for OpenRouter */
 export const POPULAR_OPENROUTER_MODELS = [
   "anthropic/claude-3.5-sonnet",

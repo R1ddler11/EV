@@ -82,10 +82,19 @@ export function mapOpenAIError(error: unknown): SafeApiError {
     );
   }
   if (error instanceof OpenAI.APIError) {
+    const msg = error.message ?? "";
     if (
       error.status === 502 ||
-      /bad gateway|upstream|overloaded|try again later/i.test(error.message ?? "")
+      /bad gateway|upstream|overloaded|try again later|unavailable/i.test(msg)
     ) {
+      if (/unavailable/i.test(msg)) {
+        return base(
+          502,
+          "model_unavailable",
+          "The configured AI model is not available on this OpenRouter key.",
+          "This model may be retired or not enabled for your key. Switch models in Settings → Advanced (e.g. openai/gpt-4o-mini or openai/gpt-3.5-turbo). Your text is preserved — nothing was sent.",
+        );
+      }
       return base(
         502,
         "model_overloaded",
