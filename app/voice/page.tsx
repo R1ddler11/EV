@@ -230,22 +230,32 @@ function VoiceInner() {
     phaseRef.current = phase;
   }, [phase]);
 
-  // Play one TTS reply blob through an <audio> element. Barge-in safe:
-  // stopPlayback pauses the tracked element alongside speechSynthesis.
+  // Play one TTS reply blob through an <audio> element. Resolves true when
+  // the audio actually played to completion, false when playback failed
+  // (autoplay block, decode error). Barge-in safe: stopPlayback pauses the
+  // tracked element alongside speechSynthesis.
   const replyAudioRef = useRef<HTMLAudioElement | null>(null);
-  const playBlob = useCallback((blob: Blob): Promise<void> => {
-    const { promise, resolve } = Promise.withResolvers<void>();
+  const playBlob = useCallback((blob: Blob): Promise<boolean> => {
+    const { promise, resolve } = Promise.withResolvers<boolean>();
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     replyAudioRef.current = audio;
-    const done = () => {
+    const cleanup = () => {
       URL.revokeObjectURL(url);
       if (replyAudioRef.current === audio) replyAudioRef.current = null;
-      resolve();
     };
-    audio.onended = done;
-    audio.onerror = done;
-    audio.play().catch(done);
+    audio.onended = () => {
+      cleanup();
+      resolve(true);
+    };
+    audio.onerror = () => {
+      cleanup();
+      resolve(false);
+    };
+    audio.play().catch(() => {
+      cleanup();
+      resolve(false);
+    });
     return promise;
   }, []);
 
@@ -384,10 +394,34 @@ function VoiceInner() {
         recorderRef.current?.appendReply(blob);
         setRecState("capturing");
         setIsSpeaking(true);
+        let heard = true;
         try {
-          await playBlob(blob);
+          heard = await playBlob(blob);
+        } catch {
+          heard = false;
         } finally {
           if (aliveRef.current) setIsSpeaking(false);
+        }
+        if (!heard) {
+          setNotice("E.V. answered (see transcript) but the reply audio could not play — check the tab is unmuted and autoplay is allowed, then speak to continue.");
+        }
+        // The reply's own audio ends the recognizer (continuous mode still
+        // auto-ends on sustained speaker output): restart it so the next
+        // user turn is heard. Muted/teardown states stay stopped.
+        if (
+          aliveRef.current &&
+          phaseRef.current === "live" &&
+          linkModeRef.current === "local" &&
+          !mutedRef.current &&
+          recogRef.current
+        ) {
+          try {
+            recogRef.current.start();
+          } catch (e: unknown) {
+            const err = e as DOMException;
+            // Already running (e.g. onend beat us): not an error.
+            if (err.name !== "InvalidStateError") throw e;
+          }
         }
 
         // Persist to conversation
