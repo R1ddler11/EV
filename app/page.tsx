@@ -4,7 +4,7 @@
    think → resolve → condense → unfold) is the home
    experience, wired through the shared orb turn.
    Below the hero, the overview's real content as
-   restrained black sections with hairline borders —
+   restrained black panels with hairline borders —
    status pills, live clock, diagnostics summary,
    activity feed and quick actions. Every control
    works; empty states are honest. */
@@ -23,6 +23,7 @@ import { useOrbTurn } from "@/lib/use-orb-turn";
 import { motionAllowed } from "@/lib/motion";
 import { useEv } from "@/lib/store";
 
+/** Live clock hook — updates every second. */
 function useClock(): { time: string; date: string } {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
@@ -35,25 +36,18 @@ function useClock(): { time: string; date: string } {
     return { time: "--:--:--", date: "Loading live clock…" };
   }
   return {
-    time: now.toLocaleTimeString("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
-    date: now.toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    }),
+    time: now.toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    date: now.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }),
   };
 }
 
+/** Quick actions as real routes — primary CTA gets inverted button. */
 const QUICK_ACTIONS = [
-  { label: "Start a new exchange", href: "/assistant?new=1", icon: Plus },
-  { label: "Enter voice mode", href: "/voice", icon: Mic },
-  { label: "Run system diagnostics", href: "/diagnostics", icon: Stethoscope },
-  { label: "Review memory vault", href: "/memory", icon: ArrowRight },
-];
+  { label: "Start a new exchange", href: "/assistant?new=1", icon: Plus, primary: true },
+  { label: "Enter voice mode", href: "/voice", icon: Mic, primary: false },
+  { label: "Run system diagnostics", href: "/diagnostics", icon: Stethoscope, primary: false },
+  { label: "Review memory vault", href: "/memory", icon: ArrowRight, primary: false },
+] as const;
 
 export default function OverviewPage() {
   const root = useRef<HTMLDivElement>(null);
@@ -65,70 +59,61 @@ export default function OverviewPage() {
     activity,
     settings,
   } = useEv();
-  // The hero's ask surface runs the shared orb
-  // turn — the same implementation the assistant's
-  // empty state uses.
+
   const { orbSubmit } = useOrbTurn({
     activityLabel: "Exchange started from Overview",
   });
   const clock = useClock();
   const reduced = !motionAllowed(settings.reducedMotionOverride);
 
+  /** Declare RHYTHM dial — section spacing ladder. */
+  const rhythm = {
+    xs: 8,
+    sm: 14,
+    md: 22,
+    lg: 32,
+    xl: 48,
+  } as const;
+
+  /** GSAP entrance animations for sections below hero. */
   useGSAP(
     () => {
-      if (reduced || !root.current) return;
+      if (reduced) return;
       const ctx = gsap.context(() => {
         gsap.from(".ev-enter", {
+          y: 16,
           opacity: 0,
-          y: 18,
-          duration: 0.6,
-          stagger: 0.08,
+          duration: 0.5,
           ease: "power2.out",
-          clearProps: "all",
+          stagger: 0.08,
         });
       }, root);
       return () => ctx.revert();
     },
-    { scope: root, dependencies: [ready] },
+    { scope: root, dependencies: [ready, reduced] },
   );
 
   const degraded = DIAGNOSTICS.filter((d) => d.status !== "nominal").length;
   const recent = activity.slice(0, 6);
 
   return (
-    <div ref={root}>
-      {/* The hero: the ask surface and its full
-          processing choreography. The orb component
-          is a fixed full-viewport surface by design;
-          .orb-hero scopes it to this section so the
-          restrained sections below stay reachable. */}
+    <div ref={root} className="ev-main">
+      {/* ── HERO: MorphOrb centerpiece, full viewport height ── */}
       <section className="orb-hero" aria-label="Ask E.V.">
         <MorphOrb onSubmit={orbSubmit} />
       </section>
 
-      <div className="ev-stack" style={{ marginTop: 14 }}>
-        <section className="ev-panel ev-enter" aria-label="E.V. status">
-          <SectionLabel>Status</SectionLabel>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: 12,
-              marginTop: 8,
-            }}
-          >
+      {/* ── SECTIONS: restrained black panels with hairline borders ── */}
+      <div className="ev-stack" style={{ gap: rhythm.lg, paddingBottom: rhythm.xl }}>
+        {/* STATUS: LinkStatus pills + live clock */}
+        <section className="ev-panel ev-enter" aria-labelledby="status-heading">
+          <SectionLabel id="status-heading">Status</SectionLabel>
+          <div className="ev-status-row" style={{ marginTop: rhythm.sm }}>
             <LinkStatus />
-            <p
-              className="ev-clock"
-              aria-label="Local time"
-              style={{ margin: "0 0 0 auto" }}
-            >
-              {clock.time} · {clock.date}
-            </p>
+            <p className="ev-clock" aria-label="Local time">{clock.time} · {clock.date}</p>
           </div>
           {backendHint && backendReachable && (
-            <p className="ev-hint" style={{ marginTop: 10 }}>
+            <p className="ev-hint" style={{ marginTop: rhythm.xs }}>
               {backendHint}
             </p>
           )}
@@ -136,7 +121,7 @@ export default function OverviewPage() {
             <button
               type="button"
               className="ev-btn ev-btn-sm"
-              style={{ marginTop: 10 }}
+              style={{ marginTop: rhythm.xs }}
               onClick={recheckBackend}
             >
               Recheck cloud link
@@ -144,60 +129,49 @@ export default function OverviewPage() {
           )}
         </section>
 
-        <div className="ev-grid-2">
-          <section className="ev-panel ev-enter" aria-label="Diagnostics summary">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-              }}
-            >
-              <SectionLabel>Diagnostics · Simulated Demo</SectionLabel>
-              <Link href="/diagnostics" className="ev-icon-btn">
-                Full panel <ArrowRight />
+        {/* DIAGNOSTICS SUMMARY + RECENT ACTIVITY side by side */}
+        <div className="ev-grid-2" style={{ gap: rhythm.md }}>
+          {/* DIAGNOSTICS SUMMARY: 4 key metrics, degraded count, link to full panel */}
+          <section className="ev-panel ev-enter" aria-labelledby="diag-heading">
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <SectionLabel id="diag-heading">Diagnostics · Simulated Demo</SectionLabel>
+              <Link href="/diagnostics" className="ev-icon-btn" aria-label="Open full diagnostics panel">
+                <span>Full panel</span>
+                <ArrowRight aria-hidden="true" style={{ width: 14, height: 14 }} />
               </Link>
             </div>
-            <div style={{ marginTop: 6 }}>
+            <div style={{ marginTop: rhythm.xs }}>
               {DIAGNOSTICS.slice(0, 4).map((d) => (
                 <div className="ev-diag-row" key={d.key}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>
-                    {d.label}
-                  </span>
-                  <span
-                    className={`ev-mono ${STATUS_META[d.status].className}`}
-                    style={{ fontSize: 12 }}
-                  >
+                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{d.label}</span>
+                  <span className={`ev-mono ${STATUS_META[d.status].className}`} style={{ fontSize: 12 }}>
                     {STATUS_META[d.status].label} · {d.value}
                   </span>
                 </div>
               ))}
             </div>
-            <p className="ev-hint" style={{ marginTop: 10 }}>
+            <p className="ev-hint" style={{ marginTop: rhythm.xs }}>
               {degraded === 0
                 ? "All sampled subsystems nominal."
-                : `${degraded} sampled subsystem${degraded > 1 ? "s" : ""} degraded — see the full panel.`}{" "}
-              Sample data, deterministic.
+                : `${degraded} sampled subsystem${degraded > 1 ? "s" : ""} degraded — see the full panel.`}
+              {" "}
+              <span style={{ color: "var(--color-ev-faint)" }}>Sample data, deterministic.</span>
             </p>
           </section>
 
-          <section className="ev-panel ev-enter" aria-label="Recent activity">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-              }}
-            >
-              <SectionLabel>Recent Activity</SectionLabel>
-              <Link href="/memory" className="ev-icon-btn">
-                Vault <ArrowRight />
+          {/* RECENT ACTIVITY: real feed, honest empty state */}
+          <section className="ev-panel ev-enter" aria-labelledby="activity-heading">
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <SectionLabel id="activity-heading">Recent Activity</SectionLabel>
+              <Link href="/memory" className="ev-icon-btn" aria-label="Open memory vault">
+                <span>Vault</span>
+                <ArrowRight aria-hidden="true" style={{ width: 14, height: 14 }} />
               </Link>
             </div>
-            <div style={{ marginTop: 6 }}>
+            <div style={{ marginTop: rhythm.xs }}>
               {recent.length === 0 ? (
-                <div className="ev-empty">
-                  <span>No activity yet.</span>
+                <div className="ev-empty" role="status" aria-live="polite">
+                  <span style={{ fontWeight: 600 }}>No activity yet.</span>
                   <span className="ev-hint">
                     Chat, run diagnostics, or save a note — it will appear here.
                   </span>
@@ -205,9 +179,10 @@ export default function OverviewPage() {
               ) : (
                 recent.map((entry) => (
                   <div className="ev-activity-row" key={entry.id}>
-                    <span
+                    <time
                       className="ev-mono"
-                      style={{ fontSize: 10.5, color: "#5b6470", flex: "none" }}
+                      style={{ fontSize: 10.5, color: "var(--color-ev-faint)", flex: "none" }}
+                      dateTime={new Date(entry.at).toISOString()}
                     >
                       {new Date(entry.at).toLocaleString("en-GB", {
                         day: "2-digit",
@@ -215,11 +190,11 @@ export default function OverviewPage() {
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
-                    </span>
+                    </time>
                     <span>
                       <strong style={{ fontWeight: 600 }}>{entry.label}</strong>
                       {entry.detail && (
-                        <span style={{ color: "#8d99a6" }}> — {entry.detail}</span>
+                        <span style={{ color: "var(--color-ev-muted)" }}> — {entry.detail}</span>
                       )}
                     </span>
                   </div>
@@ -229,12 +204,19 @@ export default function OverviewPage() {
           </section>
         </div>
 
-        <section className="ev-panel ev-enter" aria-label="Suggested actions">
-          <SectionLabel>Suggested Actions</SectionLabel>
-          <div className="ev-suggest-row" style={{ marginTop: 10 }}>
-            {QUICK_ACTIONS.map(({ label, href, icon: Icon }) => (
-              <Link key={label} href={href} className="ev-btn">
-                <Icon /> {label}
+        {/* QUICK ACTIONS: real routes as buttons, primary CTA inverted */}
+        <section className="ev-panel ev-enter" aria-labelledby="actions-heading">
+          <SectionLabel id="actions-heading">Quick Actions</SectionLabel>
+          <div className="ev-suggest-row" style={{ marginTop: rhythm.sm, gap: rhythm.xs }}>
+            {QUICK_ACTIONS.map(({ label, href, icon: Icon, primary }) => (
+              <Link
+                key={label}
+                href={href}
+                className={`ev-btn ${primary ? "ev-btn-primary" : ""}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <Icon aria-hidden="true" style={{ width: 16, height: 16 }} />
+                {label}
               </Link>
             ))}
           </div>

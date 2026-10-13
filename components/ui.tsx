@@ -3,8 +3,8 @@
 
 import { useEffect, useRef } from "react";
 
-export function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="ev-label">{children}</p>;
+export function SectionLabel({ children, id }: { children: React.ReactNode; id?: string }) {
+  return <p className="ev-label" id={id}>{children}</p>;
 }
 
 export function StatusPill({

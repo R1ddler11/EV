@@ -1,17 +1,8 @@
-/* PROJECT E.V. — shared conversation UI (frontend-owned).
-   ChatThread renders markdown assistant turns with copy/retry, locally
-   derived follow-up chips, and the mode toggle + speak-aloud controls sit
-   near the Composer. Composer handles Enter-to-send / Shift+Enter-newline.
-   The useChat hook owns the send/stream/stop lifecycle against /api/chat via
-   lib/api.ts, threads the persisted chat mode, and persists finished turns to
-   IndexedDB. Backend `ui` tool-actions execute through lib/ui-actions.ts
-   (notes mirror, panel nav, scan requests) — they never enter chat text.
-   Failures surface with the backend's own next steps. */
 "use client";
 
+import { ArrowUp, Check, Copy, CornerDownLeft, RefreshCw, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, CornerDownLeft, RefreshCw } from "lucide-react";
 import MarkdownView from "./markdown";
 import {
   BackendUnavailableError,
@@ -22,7 +13,6 @@ import { newId, type ChatMessage, type ChatMode, type Conversation } from "@/lib
 import { useEv } from "@/lib/store";
 import { handleUiAction } from "@/lib/ui-actions";
 import { ConfirmDialog } from "./ui";
-import { PromptInputBox } from "./ui/ai-prompt-box";
 import { VoiceInput } from "./ui/voice-input";
 
 /** Openers a person would actually type to a friend. */
@@ -647,12 +637,24 @@ function MessageActions({
   };
   return (
     <div className="ev-msg-actions">
-      <button type="button" className="ev-icon-btn" onClick={copy}>
-        {copied ? <Check /> : <Copy />} {copied ? "Copied" : "Copy"}
+      <button
+        type="button"
+        className="ev-icon-btn"
+        onClick={copy}
+        aria-label={copied ? "Copied to clipboard" : "Copy message"}
+      >
+        {copied ? <Check /> : <Copy />}
+        <span className="ev-icon-btn-label">{copied ? "Copied" : "Copy"}</span>
       </button>
       {onRetry && (
-        <button type="button" className="ev-icon-btn" onClick={onRetry}>
-          <RefreshCw /> {retryLabel ?? "Retry"}
+        <button
+          type="button"
+          className="ev-icon-btn"
+          onClick={onRetry}
+          aria-label={retryLabel ?? "Retry"}
+        >
+          <RefreshCw />
+          <span className="ev-icon-btn-label">{retryLabel ?? "Retry"}</span>
         </button>
       )}
     </div>
@@ -697,28 +699,38 @@ export function ChatThread({
   return (
     <div className="ev-thread" aria-live="polite">
       {messages.map((message, index) => (
-        <div
+        <article
           key={message.id}
           className={
-            message.role === "user" ? "ev-msg ev-msg-user" : "ev-msg ev-msg-assistant"
+            message.role === "user"
+              ? "ev-msg ev-msg-user"
+              : "ev-msg ev-msg-assistant"
           }
         >
-          <div className="ev-msg-meta">
+          <header className="ev-msg-meta">
             <span>{message.role === "user" ? "Alfarez" : "E.V."}</span>
-            <span>
+            <time className="ev-mono" dateTime={new Date(message.createdAt).toISOString()}>
               {new Date(message.createdAt).toLocaleString("en-GB", {
                 day: "2-digit",
                 month: "short",
                 hour: "2-digit",
                 minute: "2-digit",
               })}
-            </span>
+            </time>
+          </header>
+          <div
+            className={
+              message.role === "user"
+                ? "ev-bubble ev-bubble-user"
+                : "ev-bubble ev-bubble-assistant"
+            }
+          >
+            {message.role === "user" ? (
+              <p>{message.content}</p>
+            ) : (
+              <MarkdownView text={message.content} />
+            )}
           </div>
-          {message.role === "user" ? (
-            <div className="ev-bubble">{message.content}</div>
-          ) : (
-            <MarkdownView text={message.content} />
-          )}
           <MessageActions
             message={message}
             onRetry={
@@ -733,37 +745,43 @@ export function ChatThread({
             }
           />
           {message.id === lastAssistantId && followUps.length > 0 && (
-            <div className="ev-suggest-row" style={{ marginTop: 2 }}>
+            <footer className="ev-followup-row">
               {followUps.map((chip) => (
                 <button
                   key={chip}
                   type="button"
-                  className="ev-btn ev-btn-sm ev-btn-ghost"
+                  className="ev-btn ev-btn-sm ev-btn-ghost ev-followup-chip"
                   onClick={() => onFollowUp(chip)}
                 >
-                  <CornerDownLeft aria-hidden /> {chip}
+                  <CornerDownLeft aria-hidden="true" />
+                  {chip}
                 </button>
               ))}
-            </div>
+            </footer>
           )}
-        </div>
+        </article>
       ))}
       {draft && (
-        <div className="ev-msg ev-msg-assistant">
-          <div className="ev-msg-meta">
+        <article className="ev-msg ev-msg-assistant ev-msg-streaming">
+          <header className="ev-msg-meta">
             <span>E.V.</span>
-            <span>Streaming…</span>
+            <div className="ev-streaming-indicator">
+              <span className="ev-streaming-dot" aria-hidden="true" />
+              <span>Streaming…</span>
+            </div>
+          </header>
+          <div className="ev-bubble ev-bubble-assistant">
+            <MarkdownView text={draft} />
           </div>
-          <MarkdownView text={draft} />
-        </div>
+        </article>
       )}
       {working && !draft && (
-        <div className="ev-msg ev-msg-assistant">
-          <div className="ev-msg-meta">
+        <article className="ev-msg ev-msg-assistant ev-msg-thinking">
+          <header className="ev-msg-meta">
             <span>E.V.</span>
-            <span>Thinking…</span>
-          </div>
-        </div>
+            <span className="ev-thinking-indicator">Thinking…</span>
+          </header>
+        </article>
       )}
       <div ref={bottomRef} />
     </div>
@@ -805,7 +823,7 @@ export function ModeToggle({
     <div
       role="radiogroup"
       aria-label="Chat mode"
-      className="inline-flex items-center gap-0.5 rounded-lg border border-[color:var(--color-ev-line2)] bg-[#0e1318] p-0.5"
+      className="ev-mode-toggle"
     >
       {MODE_OPTIONS.map((option, index) => {
         const active = mode === option.value;
@@ -831,11 +849,8 @@ export function ModeToggle({
               }
             }}
             onClick={() => onChange(option.value)}
-            className="rounded-md px-2.5 py-1 text-[12.5px] font-semibold transition-colors duration-150 motion-reduce:transition-none"
-            style={{
-              background: active ? "#12333d" : "transparent",
-              color: active ? "#c9f3ff" : "var(--color-ev-muted)",
-            }}
+            className="ev-mode-toggle-btn"
+            data-active={active ? "true" : "false"}
           >
             {option.label}
           </button>
@@ -848,40 +863,41 @@ export function ModeToggle({
 export function ChatControls({ speak }: { speak: SpeakControls }) {
   const { chatMode, setChatMode } = useEv();
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div className="ev-chat-controls">
       <ModeToggle mode={chatMode} onChange={(mode) => void setChatMode(mode)} />
-      <div className="flex items-center gap-2">
-        <span className="ev-hint">Speak</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={speak.enabled}
-          aria-label="Read E.V.'s replies aloud"
-          className="ev-switch"
-          onClick={speak.toggle}
-        />
+      <div className="ev-speak-controls">
+        <label className="ev-speak-toggle">
+          <span className="ev-hint">Speak</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={speak.enabled}
+            aria-label="Read E.V.'s replies aloud"
+            className="ev-switch"
+            onClick={speak.toggle}
+          />
+        </label>
+        {speak.enabled && speak.voices.length > 0 && (
+          <select
+            className="ev-input ev-voice-select"
+            aria-label="Speak-aloud voice"
+            value={speak.voiceURI}
+            onChange={(event) => speak.pickVoice(event.target.value)}
+          >
+            <option value="">Default voice</option>
+            {speak.voices.map((voice) => (
+              <option key={voice.voiceURI} value={voice.voiceURI}>
+                {voice.name} ({voice.lang})
+              </option>
+            ))}
+          </select>
+        )}
+        {speak.enabled && speak.notice && (
+          <span className="ev-hint" role="status">
+            {speak.notice}
+          </span>
+        )}
       </div>
-      {speak.enabled && speak.voices.length > 0 && (
-        <select
-          className="ev-input"
-          aria-label="Speak-aloud voice"
-          value={speak.voiceURI}
-          onChange={(event) => speak.pickVoice(event.target.value)}
-          style={{ width: "auto", maxWidth: 190, padding: "4px 8px", fontSize: 12.5 }}
-        >
-          <option value="">Default voice</option>
-          {speak.voices.map((voice) => (
-            <option key={voice.voiceURI} value={voice.voiceURI}>
-              {voice.name} ({voice.lang})
-            </option>
-          ))}
-        </select>
-      )}
-      {speak.enabled && speak.notice && (
-        <span className="ev-hint" role="status">
-          {speak.notice}
-        </span>
-      )}
     </div>
   );
 }
@@ -900,28 +916,84 @@ export function Composer({
   placeholder?: string;
 }) {
   const router = useRouter();
+  const [value, setValue] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const MAX_CHARS = 4000;
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const trimmed = value.trim();
+      if (trimmed && !busy) {
+        onSend(trimmed);
+        setValue("");
+      }
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (e.target.value.length <= MAX_CHARS) {
+      setValue(e.target.value);
+    }
+  };
+
+  const handleVoiceClick = () => router.push("/voice?auto=1");
 
   return (
-    <div className="w-full">
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <PromptInputBox
-            isLoading={busy}
-            placeholder={placeholder}
-            onSend={(text) => {
-              const trimmed = text.trim();
-              if (trimmed) onSend(trimmed);
-            }}
-            onStop={onStop}
-            onVoiceClick={() => router.push("/voice?auto=1")}
-          />
-        </div>
-        {/* Mic toggle: the click really starts the realtime session
-            via the voice page's existing ?auto=1 auto-start flow. */}
-        <VoiceInput
-          onStart={() => router.push("/voice?auto=1")}
-          onStop={() => undefined}
+    <div className="ev-composer">
+      <div className="ev-composer-input-wrapper">
+        <textarea
+          ref={textareaRef}
+          className="ev-textarea"
+          placeholder={placeholder}
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          disabled={busy}
+          aria-label="Message E.V."
+          rows={1}
+          style={{ minHeight: 44, maxHeight: 200 }}
         />
+        <div className="ev-composer-hint">
+          <span className="ev-mono">{value.length}</span>/{MAX_CHARS}
+        </div>
+      </div>
+      <div className="ev-composer-bar">
+        <VoiceInput
+          onStart={handleVoiceClick}
+          onStop={() => undefined}
+          className="ev-voice-btn"
+        />
+        <div className="ev-composer-actions">
+          {busy ? (
+            <button
+              type="button"
+              className="ev-btn ev-btn-primary ev-btn-sm"
+              onClick={onStop}
+              aria-label="Stop generation"
+            >
+              <Square className="h-4 w-4 fill-current" aria-hidden="true" />
+              <span>Stop</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="ev-btn ev-btn-primary ev-btn-sm"
+              onClick={() => {
+                const trimmed = value.trim();
+                if (trimmed) {
+                  onSend(trimmed);
+                  setValue("");
+                }
+              }}
+              disabled={!value.trim()}
+              aria-label="Send message"
+            >
+              <ArrowUp className="h-4 w-4" aria-hidden="true" />
+              <span>Send</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -940,12 +1012,11 @@ export function ChatFailureNotice({
 }) {
   return (
     <div className="ev-banner ev-banner-error" role="alert">
-      <span>
+      <div className="ev-banner-content">
         <strong>{failure.message}</strong>
-        <br />
-        {failure.hint}
-      </span>
-      <span style={{ display: "flex", gap: 8, flex: "none" }}>
+        <span>{failure.hint}</span>
+      </div>
+      <div className="ev-banner-actions">
         <button type="button" className="ev-btn ev-btn-sm" onClick={onRetry}>
           Retry
         </button>
@@ -956,7 +1027,7 @@ export function ChatFailureNotice({
         >
           Dismiss
         </button>
-      </span>
+      </div>
     </div>
   );
 }
