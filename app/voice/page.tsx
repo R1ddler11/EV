@@ -210,6 +210,9 @@ function VoiceInner() {
   const linkModeRef = useRef<LinkMode>("realtime");
   const silenceTimerRef = useRef<number | undefined>(undefined);
   const pendingUserTurnRef = useRef<string>("");
+  // Fires the turn only after a long stretch with zero new results: the
+  // recognizer's own signal that you really stopped talking.
+  const endOfSpeechTimerRef = useRef<number | undefined>(undefined);
   // Keep references to state values needed inside callbacks
   const activeIdRef = useRef(activeId);
   const settingsRef = useRef(settings);
@@ -287,6 +290,8 @@ function VoiceInner() {
   const teardown = useCallback(() => {
     clearTimeout(silenceTimerRef.current);
     silenceTimerRef.current = undefined;
+    clearTimeout(endOfSpeechTimerRef.current);
+    endOfSpeechTimerRef.current = undefined;
     pendingUserTurnRef.current = "";
     if (recorderRef.current) {
       recorderRef.current.dispose();
@@ -480,6 +485,8 @@ function VoiceInner() {
     pendingUserTurnRef.current = "";
     clearTimeout(silenceTimerRef.current);
     silenceTimerRef.current = undefined;
+    clearTimeout(endOfSpeechTimerRef.current);
+    endOfSpeechTimerRef.current = undefined;
     if (!text || mutedRef.current || isTurnInFlightRef.current) return;
     setInterim("");
     setHasPendingTurn(false);
@@ -506,11 +513,13 @@ function VoiceInner() {
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
-    // Dictation window: the recognizer emits finals per pause, not per
-    // thought. Accumulate final fragments and send the turn after 2.5s of
-    // silence — long enough to think mid-sentence. Interim shows the full
-    // accumulating draft (finals + live tail) so you see the whole sentence
-    // building; Send-now fires immediately without waiting out the window.
+    // End-of-speech turn detection. The recognizer emits finals per pause,
+    // not per thought — so a bare silence timer either fires mid-sentence
+    // or strands the turn. Instead: short pauses (1.2s) only *settle* the
+    // draft into the interim line; the turn fires when the recognizer
+    // itself signals end-of-speech (result streak ends + sound ends), or
+    // when silence stretches to 6s, or via Send-now. Interim always shows
+    // the full accumulating draft so you see the whole sentence building.
     recognition.onresult = (event: SpeechResultEventLike) => {
       if (mutedRef.current) return;
       let freshFinal = "";
@@ -527,16 +536,24 @@ function VoiceInner() {
       if (freshFinal.trim()) {
         pendingUserTurnRef.current +=
           (pendingUserTurnRef.current ? " " : "") + freshFinal.trim();
+        // Short pause: settle the draft visibly, keep listening.
         clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = window.setTimeout(() => {
-          const text = pendingUserTurnRef.current.trim();
-          pendingUserTurnRef.current = "";
           silenceTimerRef.current = undefined;
-          if (!text || mutedRef.current) return;
-          setInterim("");
-          setHasPendingTurn(false);
-          handleLocalTurn(text);
-        }, 2500);
+          if (mutedRef.current || isTurnInFlightRef.current) return;
+          // Still only a pause — surface the draft, don't send.
+          const settled = pendingUserTurnRef.current.trim();
+          if (settled) {
+            setInterim(settled);
+            setHasPendingTurn(true);
+          }
+        }, 1200);
+        // Long silence with no new results: you really stopped talking.
+        clearTimeout(endOfSpeechTimerRef.current);
+        endOfSpeechTimerRef.current = window.setTimeout(() => {
+          endOfSpeechTimerRef.current = undefined;
+          flushPendingTurn();
+        }, 6000);
       }
       const draft = (
         pendingUserTurnRef.current +
@@ -553,6 +570,13 @@ function VoiceInner() {
     };
 
     recognition.onend = () => {
+      // Recognizer ended on its own (end of utterance or speaker silence):
+      // if a draft is waiting, you really stopped talking — send it.
+      // Otherwise auto-restart unless we're ending.
+      if (pendingUserTurnRef.current.trim()) {
+        flushPendingTurn();
+        return;
+      }
       if (aliveRef.current && phaseRef.current === "live") {
         // Auto-restart unless we're ending
         recognition.start();
