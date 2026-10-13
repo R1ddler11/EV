@@ -15,6 +15,8 @@
    page never guesses, never times a "success" that did not happen. */
 "use client";
 
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -23,6 +25,7 @@ import {
   MicOff,
   PhoneOff,
   Save,
+  Send,
   VolumeX,
 } from "lucide-react";
 import { VoicePoweredOrb } from "@/components/ui/voice-powered-orb";
@@ -155,6 +158,9 @@ const LINK_LABEL: Record<RealtimePhase, string> = {
 function VoiceInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const stageRef = useRef<HTMLElement | null>(null);
+  const orbWrapRef = useRef<HTMLDivElement | null>(null);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
   const {
     active,
     activeId,
@@ -190,6 +196,7 @@ function VoiceInner() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [hasPendingTurn, setHasPendingTurn] = useState(false);
+  const [isTurnInFlight, setIsTurnInFlight] = useState(false);
   const recogRef = useRef<SpeechRecognitionLike | null>(null);
   const realtimeRef = useRef<RealtimeHandle | null>(null);
   const recorderRef = useRef<SessionRecorder | null>(null);
@@ -345,6 +352,7 @@ function VoiceInner() {
   const handleLocalTurn = useCallback(async (text: string) => {
     if (isTurnInFlightRef.current) return;
     isTurnInFlightRef.current = true;
+    setIsTurnInFlight(true);
     setHasPendingTurn(true);
 
     // Add user to transcript
@@ -459,10 +467,24 @@ function VoiceInner() {
       }
     } finally {
       isTurnInFlightRef.current = false;
+      setIsTurnInFlight(false);
       setHasPendingTurn(false);
       interimAssistant.current = "";
     }
   }, [activeIdRef, newConversation, memoriesRef, notesRef, settings, appendMessage, playBlob]);
+
+  // Send-now: fire the accumulated draft immediately instead of waiting out
+  // the silence window. Clears the timer so it can't double-fire.
+  const flushPendingTurn = useCallback(() => {
+    const text = pendingUserTurnRef.current.trim();
+    pendingUserTurnRef.current = "";
+    clearTimeout(silenceTimerRef.current);
+    silenceTimerRef.current = undefined;
+    if (!text || mutedRef.current || isTurnInFlightRef.current) return;
+    setInterim("");
+    setHasPendingTurn(false);
+    handleLocalTurn(text);
+  }, [handleLocalTurn]);
 
   const startLocal = useCallback(async () => {
     setPhase("live");
@@ -484,20 +506,22 @@ function VoiceInner() {
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
-    // Dictation debounce: the recognizer emits finals per pause, not per
-    // thought. Accumulate final fragments and only send the turn after
-    // ~1.2s of silence, so mid-sentence pauses don't fire early.
-    // Interim text keeps flowing to the UI while we wait.
+    // Dictation window: the recognizer emits finals per pause, not per
+    // thought. Accumulate final fragments and send the turn after 2.5s of
+    // silence — long enough to think mid-sentence. Interim shows the full
+    // accumulating draft (finals + live tail) so you see the whole sentence
+    // building; Send-now fires immediately without waiting out the window.
     recognition.onresult = (event: SpeechResultEventLike) => {
       if (mutedRef.current) return;
       let freshFinal = "";
+      let liveTail = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results.item(i);
         if (!res) continue;
         if (res.isFinal) {
           freshFinal += res[0].transcript;
         } else {
-          setInterim(res[0].transcript);
+          liveTail = res[0].transcript;
         }
       }
       if (freshFinal.trim()) {
@@ -510,9 +534,16 @@ function VoiceInner() {
           silenceTimerRef.current = undefined;
           if (!text || mutedRef.current) return;
           setInterim("");
+          setHasPendingTurn(false);
           handleLocalTurn(text);
-        }, 1200);
+        }, 2500);
       }
+      const draft = (
+        pendingUserTurnRef.current +
+        (liveTail ? ` ${liveTail}` : "")
+      ).trim();
+      setInterim(draft);
+      setHasPendingTurn(draft.length > 0);
     };
 
     recognition.onerror = (e: { error: string }) => {
@@ -803,6 +834,42 @@ function VoiceInner() {
     }
   }, [searchParams, phase, handleStart, router]);
 
+  // Stage choreography: orb entrance on mount, swell on phase changes.
+  // Reduced-motion (system or settings override) skips everything.
+  useGSAP(
+    () => {
+      if (reduced) return;
+      if (orbWrapRef.current) {
+        gsap.fromTo(
+          orbWrapRef.current,
+          { scale: 0.82, opacity: 0 },
+          { scale: 1, opacity: 1, duration: 1.1, ease: "expo.out" },
+        );
+      }
+    },
+    { scope: stageRef, dependencies: [] },
+  );
+
+  useGSAP(
+    () => {
+      if (reduced || !orbWrapRef.current) return;
+      const speaking = linkPhase === "speaking" || linkPhase === "processing";
+      gsap.to(orbWrapRef.current, {
+        scale: speaking ? 1.06 : 1,
+        duration: 0.7,
+        ease: "sine.inOut",
+      });
+      if (controlsRef.current && phase === "live") {
+        gsap.fromTo(
+          controlsRef.current.children,
+          { y: 14, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.45, stagger: 0.07, ease: "back.out(1.6)" },
+        );
+      }
+    },
+    { scope: stageRef, dependencies: [phase, linkPhase] },
+  );
+
   // Render phase badge - use useMemo to avoid creating component during render
   const PhaseBadge = useMemo(() => {
     if (phase !== "live") return null;
@@ -824,13 +891,13 @@ function VoiceInner() {
   return (
     <div className="ev-voice-page">
       {/* Full-bleed orb stage */}
-      <section className="ev-voice-stage" aria-label="Voice session">
+      <section ref={stageRef} className="ev-voice-stage" aria-label="Voice session">
         <div className="ev-voice-stage-header">
           {PhaseBadge}
           <CloudPill />
         </div>
 
-        <div className="ev-voice-orb-wrapper">
+        <div ref={orbWrapRef} className="ev-voice-orb-wrapper">
           <VoicePoweredOrb
             hue={187}
             enableVoiceControl={phase === "live"}
@@ -839,7 +906,7 @@ function VoiceInner() {
         </div>
 
         {phase === "live" && (
-          <div className="ev-voice-controls">
+          <div ref={controlsRef} className="ev-voice-controls">
             <button
               type="button"
               className={`ev-btn ev-btn-ghost ev-mic-btn ${muted ? "ev-muted" : ""}`}
@@ -849,6 +916,17 @@ function VoiceInner() {
             >
               {muted ? <MicOff size={20} /> : <Mic size={20} />}
             </button>
+            {linkMode === "local" && hasPendingTurn && !isTurnInFlight && (
+              <button
+                type="button"
+                className="ev-btn ev-btn-primary ev-send-now-btn"
+                onClick={flushPendingTurn}
+                aria-label="Send your dictated sentence now"
+                title="Send now — don't wait for the pause window"
+              >
+                <Send size={16} /> Send now
+              </button>
+            )}
             <button
               type="button"
               className="ev-btn ev-btn-danger ev-end-btn"

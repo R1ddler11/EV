@@ -1965,12 +1965,29 @@ button.ev-mic-btn {
   border-color: var(--color-ev-cyan);
   box-shadow: 0 0 0 2px rgba(53, 224, 255, 0.25);
 }
+/* Draft pending indicator: interim text breathes while the silence window runs. */
 .ev-transcript-interim {
   margin: 0;
   font-size: 14px;
   color: #8d99a6;
+  animation: ev-interim-breathe 1.6s ease-in-out infinite;
 }
 
+@keyframes ev-interim-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* Send-now: primary treatment, already covered by .ev-btn-primary. */
+.ev-send-now-btn {
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ev-transcript-interim {
+    animation: none;
+  }
+}
 .ev-level-panel {
   overflow: hidden;
 }
